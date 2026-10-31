@@ -1,0 +1,111 @@
+#include <WiFi.h>
+#include <HTTPClient.h>
+
+// ===== Fill these in =====
+const char* ssid = "YOUR_WIFI_NAME";
+const char* password = "YOUR_WIFI_PASSWORD";
+const char* apiKey = "YOUR_WRITE_API_KEY";
+const char* server = "http://api.thingspeak.com/update";
+
+// ===== Pin assignments =====
+#define TRIG_PIN 6
+#define ECHO_PIN 7
+#define RED_LED 4
+#define BLUE_LED 5
+#define BUZZER 10
+
+// ===== State tracking =====
+unsigned long lastSend = 0;
+const unsigned long interval = 60000;  // heartbeat every 60 seconds
+bool alarmActive = false;
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+  pinMode(RED_LED, OUTPUT);
+  pinMode(BLUE_LED, OUTPUT);
+  pinMode(BUZZER, OUTPUT);
+  
+  Serial.print("Connecting to WiFi");
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println();
+  Serial.print("Connected! IP: ");
+  Serial.println(WiFi.localIP());
+}
+
+long readDistance() {
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+  long duration = pulseIn(ECHO_PIN, HIGH, 30000);  // 30 ms timeout
+  return duration * 0.034 / 2;  // convert µs → cm
+}
+
+void sendToThingSpeak(int value) {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    String url = String(server) + "?api_key=" + apiKey + "&field1=" + String(value);
+    http.begin(url);
+    int httpCode = http.GET();
+    Serial.print("Sent to ThingSpeak: ");
+    Serial.print(value);
+    Serial.print(" | Response: ");
+    Serial.println(httpCode);
+    http.end();
+  } else {
+    Serial.println("WiFi disconnected, cannot send");
+  }
+}
+
+void triggerAlarm() {
+  Serial.println("ALARM TRIGGERED!");
+  alarmActive = true;
+  
+  for (int i = 0; i < 15; i++) {
+    digitalWrite(RED_LED, HIGH);
+    digitalWrite(BLUE_LED, LOW);
+    digitalWrite(BUZZER, HIGH);
+    delay(100);
+    digitalWrite(RED_LED, LOW);
+    digitalWrite(BLUE_LED, HIGH);
+    digitalWrite(BUZZER, LOW);
+    delay(100);
+  }
+  
+  digitalWrite(RED_LED, LOW);
+  digitalWrite(BLUE_LED, LOW);
+  digitalWrite(BUZZER, LOW);
+  
+  sendToThingSpeak(1);
+}
+
+void loop() {
+  long distance = readDistance();
+  Serial.print("Distance: ");
+  Serial.print(distance);
+  Serial.println(" cm");
+  
+  if (distance > 0 && distance <= 10 && !alarmActive) {
+    triggerAlarm();
+    lastSend = millis();
+  }
+  
+  if (distance > 20 && alarmActive) {
+    alarmActive = false;
+    Serial.println("Area clear — monitoring resumed");
+  }
+  
+  if (!alarmActive && millis() - lastSend >= interval) {
+    lastSend = millis();
+    sendToThingSpeak(0);
+  }
+  
+  delay(300);
+}
