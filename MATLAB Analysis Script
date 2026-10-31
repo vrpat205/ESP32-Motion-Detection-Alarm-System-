@@ -1,0 +1,15 @@
+channelID = 3499662;                      % my channel ID
+readAPIKey = 'MY_READ_API_KEY';
+alertAPIKey = 'MY_ALERTS_API_KEY';
+
+data = thingSpeakRead(channelID, 'NumMinutes', 5, 'Fields', 1, 'ReadKey', readAPIKey);
+
+if any(data > 0)
+    alertSubject = 'Smart Alarm Triggered!';
+    alertBody = 'Motion detected by your ESP32 Smart Alarm System.';
+    options = weboptions('HeaderFields', ...
+        {'ThingSpeak-Alerts-API-Key', alertAPIKey; 'Content-Type', 'application/json'});
+    alertURL = 'https://api.thingspeak.com/alerts/send';
+    jsonMessage = sprintf('{"subject": "%s", "body": "%s"}', alertSubject, alertBody);
+    webwrite(alertURL, jsonMessage, options);
+end
